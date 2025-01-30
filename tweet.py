@@ -1,6 +1,5 @@
 import requests
 
-
 def post_tweet(payload, new_token):
     print("Tweeting!")
     return requests.request(
