@@ -1,2 +1,4 @@
 Files/access.txt
 .idea
+__pycache__
+.venv
