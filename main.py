@@ -1,20 +1,32 @@
 import tweet
-import re
-import base64
-import hashlib
 import os
 
 from flask import Flask, request, redirect, session
-from authenticator import Authenticator
-import authenticator
+from requests_oauthlib import OAuth2Session
+from openai import OpenAI
+
+import authenticator as auth
 
 app = Flask(__name__)
 app.secret_key = os.urandom(50)
+os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
 @app.route("/")
 def demo():
-    auth = initialize_authenticator()
-    twitter = authenticator.oauth2session(auth.client_id, auth.redirect_uri, auth.scopes)
+    client = OpenAI(
+        api_key=""
+    )
+
+    completion = client.chat.completions.create(
+        model="gpt-4o-mini",
+        store=True,
+        messages=[
+            {"role": "user", "content": "write a haiku about ai"}
+        ]
+    )
+
+    print(completion.choices[0].message)
+    twitter = OAuth2Session(auth.client_id, redirect_uri=auth.redirect_uri, scope=auth.scopes)
     authorization_url, state = twitter.authorization_url(
         auth.auth_url, code_challenge=auth.code_challenge, code_challenge_method="S256"
     )
@@ -23,12 +35,12 @@ def demo():
 
 @app.route("/oauth/callback", methods=["GET"])
 def callback():
-    auth = initialize_authenticator()
-    code = request.args.get("code")
+    code=request.args.get("code")
     state = session.get("oauth_state")
+    oauth_session = OAuth2Session(auth.client_id, redirect_uri=auth.redirect_uri, state=state)
 
-    twitter = authenticator.oauth2session(auth.client_id, auth.redirect_uri, state)
-    token = authenticator.retrieve_token(twitter, auth.token_url, auth.client_secret, auth.code_verifier, code)
+    token = oauth_session.fetch_token(auth.token_url, authorization_response=request.url, client_secret=auth.client_secret, code_verifier=auth.code_verifier, code=code)
+    session["oauth_token"] = token
 
     payload = {
         "text": "Learn how to use the user Tweet timeline and user mention timeline endpoints in the X API v2 to explore Tweet https://t.co/56a0vZUx7i"
@@ -36,22 +48,6 @@ def callback():
 
     response = tweet.post_tweet(payload, token).json()
     return response
-
-"===================================================================================================================="
-" Helper Methods "
-"===================================================================================================================="
-def initialize_authenticator():
-    token_url="https://api.x.com/2/oauth2/token"
-    client_id=''
-    client_secret='-'
-    redirect_uri='http://127.0.0.1:5000/oauth/callback'
-    scopes = ["tweet.read", "users.read", "tweet.write"]
-    auth_url = "https://twitter.com/i/oauth2/authorize"
-    code_verifier = re.sub("[^a-zA-Z0-9]+", "", base64.urlsafe_b64encode(os.urandom(30)).decode("utf-8"))
-    code_challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("utf-8")).digest()).decode("utf-8").replace("=", "")
-
-    auth = Authenticator(client_id, redirect_uri, scopes, auth_url, code_verifier, code_challenge, token_url, client_secret)
-    return auth
 
 if __name__ == "__main__":
     app.run()
